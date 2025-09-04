@@ -1,56 +1,39 @@
 import sys
 import os
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'shared'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'research_point_1_lightweight'))
-
-import torch
-import numpy as np
-from algorithms.dynamic_programming import AdaptiveTaskSplitting
-from algorithms.ddpg_offloading import DDPGOffloadingAgent
-from environment.vehicle_environment import VehicleEnvironment
-import json
-import os
-
-def load_lightweight_model():
-    """加载研究点一的轻量化模型"""
-    try:
-        model_path = '../research_point_1_lightweight/outputs/lightweight_model.pth'
-        if os.path.exists(model_path):
-            checkpoint = torch.load(model_path)
-            print("成功加载轻量化模型")
-            return checkpoint
-        else:
-            print("警告：未找到轻量化模型，将使用默认配置")
-            return None
-    except Exception as e:
-        print(f"加载轻量化模型失败: {e}")
-        return None
+from shared.model_interface import LightweightModelInterface
 
 def main():
     """研究点二主函数：多目标推理任务卸载优化"""
     
     print("=== 多目标推理任务卸载优化算法 ===")
     
-    # 加载轻量化模型
-    lightweight_config = load_lightweight_model()
+def setup_environment_and_agent():
+    """初始化环境和DDPG智能体"""
     
+    print("\n1. 初始化轻量化模型接口...")
+    model_interface = LightweightModelInterface()
+    try:
+        model_path = '../research_point_1_lightweight/outputs/lightweight_model.pth'
+        model_interface.load_model_from_checkpoint(model_path)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"警告: {e}")
+        print("将使用无模型的默认环境配置。")
+
     # 初始化环境
-    print("\n1. 初始化车路协同环境...")
-    env = VehicleEnvironment(model_interface=lightweight_config)
+    print("\n2. 初始化车路协同环境...")
+    env = VehicleEnvironment(model_interface=model_interface)
     
     # 初始化DDPG智能体
-    print("2. 初始化DDPG智能体...")
+    print("3. 初始化DDPG智能体...")
     state_dim = env.get_state_dimension()
     action_dim = 3  # 卸载比例、目标节点、优先级权重
     agent = DDPGOffloadingAgent(state_dim, action_dim)
     
-    # 训练参数
-    episodes = 500
-    max_steps = 50
+    return env, agent, model_interface is not None
     
-    print(f"\n3. 开始训练DDPG卸载优化算法...")
-    print(f"训练轮数: {episodes}")
-    print(f"每轮最大步数: {max_steps}")
+    env, agent, model_loaded = setup_environment_and_agent()
+    state_dim = agent.state_dim
+    action_dim = agent.action_dim
     
     # 训练统计
     training_stats = {
@@ -135,7 +118,7 @@ def main():
         'action_dim': action_dim,
         'episodes': episodes,
         'max_steps': max_steps,
-        'lightweight_model_loaded': lightweight_config is not None,
+        'lightweight_model_loaded': model_loaded,
         'training_stats': training_stats
     }
     
@@ -149,7 +132,7 @@ def main():
     print("\n6. 运行性能测试...")
     test_performance(agent, env, lightweight_config)
 
-def test_performance(agent, env, lightweight_config):
+def test_performance(agent, env):
     """测试算法性能"""
     print("\n=== 性能测试结果 ===")
     
@@ -162,9 +145,11 @@ def test_performance(agent, env, lightweight_config):
     for episode in range(test_episodes):
         state = env.reset()
         episode_reward = 0
-        episode_latency = 0
-        episode_energy = 0
-        episode_accuracy = 0
+        
+        # 从环境中获取性能指标
+        episode_latency = env.get_current_latency()
+        episode_energy = env.get_current_energy()
+        episode_accuracy = env.get_current_accuracy()
         
         for step in range(30):
             state_array = env.get_state_array()
@@ -172,19 +157,19 @@ def test_performance(agent, env, lightweight_config):
             
             next_state, reward, done = env.step(action)
             
-            # 收集指标
-            episode_latency += abs(reward) * 1000  # 转换为毫秒
-            episode_energy += abs(reward) * 0.1  # 模拟能耗
-            episode_accuracy += 0.95  # 模拟精度
+            # 累加指标
+            episode_latency += env.get_current_latency()
+            episode_energy += env.get_current_energy()
+            episode_accuracy = env.get_current_accuracy() # 通常精度在一次任务中是固定的
             episode_reward += reward
             
             if done:
                 break
         
         total_rewards.append(episode_reward)
-        latencies.append(episode_latency / (step + 1))
-        energy_consumptions.append(episode_energy / (step + 1))
-        accuracies.append(episode_accuracy / (step + 1))
+        latencies.append(episode_latency)
+        energy_consumptions.append(episode_energy)
+        accuracies.append(episode_accuracy)
     
     print(f"\n性能测试结果（{test_episodes}次测试）:")
     print(f"平均奖励: {np.mean(total_rewards):.2f} ± {np.std(total_rewards):.2f}")

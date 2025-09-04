@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from algorithms.pruning_algorithm import DualChannelPruning
 from algorithms.quantization_algorithm import CosineAdaptiveQuantization
-from models.base_model import create_detection_model
+from models.vision_model import get_vision_model
 from utils.metrics import calculate_model_metrics, compare_models
 import os
 import json
@@ -14,7 +14,7 @@ def main():
     
     # 加载或创建模型
     print("\n1. 创建原始模型...")
-    model = create_detection_model(model_type='yolo_small', num_classes=10)
+    model = get_vision_model(pretrained=True)
     
     print("原始模型信息：")
     original_metrics = calculate_model_metrics(model)
@@ -66,7 +66,7 @@ def main():
     
     # 保存配置信息
     config_info = {
-        'model_type': 'yolo_small',
+        'model_type': 'MobileNetV3-Large',
         'quantization_bits': 8,
         'pruning_ratio': 0.3,
         'quantization_results': quantization_results,
